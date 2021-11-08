@@ -97,12 +97,32 @@
       </attribute>
       <column>
        <property name="text">
+        <string>WO Number</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
         <string>Part Number</string>
        </property>
       </column>
       <column>
        <property name="text">
         <string>Description</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Total Qty Used</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>BOM Qty</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>UOM</string>
        </property>
       </column>
       <column>

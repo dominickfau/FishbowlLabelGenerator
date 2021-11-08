@@ -77,7 +77,7 @@
 			<Text>PartNumber</Text>
 			<Type>Code128Auto</Type>
 			<Size>Medium</Size>
-			<TextPosition>None</TextPosition>
+			<TextPosition>Bottom</TextPosition>
 			<TextFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" />
 			<CheckSumFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" />
 			<TextEmbedding>None</TextEmbedding>

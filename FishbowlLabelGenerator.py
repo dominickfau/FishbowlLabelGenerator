@@ -6,6 +6,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mainwindow import Ui_MainWindow
 
+__version__ = "0.1.0"
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -43,8 +45,8 @@ class DymoLabelPrinter:
         logger.info(f'Printer set to: {printer_name}')
         
     def print_labels(self, copies: int = 1):
+        logger.info(f'Printing {copies} copies.')
         with self as label_engine:
-            logger.info(f'Printing {copies} copies.')
             label_engine.Print(copies, False)
     
     def set_field(self, field_name: str, field_value: Any):
@@ -117,19 +119,12 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.mysql_database = self.settings.value('database', "none")
         self.settings.endGroup()
         self.centralwidget.setEnabled(False)
-        
 
         self.connect_to_mysql()
     
     def on_table_row_double_clicked(self, index):
-        data = []
-        row = {
-            "part_number": self.tableWidget.item(index.row(), 0).text(),
-            "part_description": self.tableWidget.item(index.row(), 1).text(),
-            "quantity": self.tableWidget.item(index.row(), 2).text()
-        }
-        data.append(row)
-        self.print_data(data)
+        selected_row = self.tableWidget.selectedItems()
+        self.print_selected_row(selected_row)
 
     def connect_to_mysql(self):
         logger.info('Connecting to Server database.')
@@ -210,15 +205,16 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
     
     def print_selected_row(self, row):
         data = [{
-            "part_number": row[0].text(),
-            "part_description": row[1].text(),
-            "quantity": row[2].text()
+            "BARCODE": row[0].text(),
+            "part_number": row[1].text(),
+            "part_description": row[2].text(),
+            "quantity": row[6].text()
         }]
         logger.debug(f"Printing selected row: {data}")
         self.print_data(data)
 
     def on_search_button_clicked(self):
-        self.get_label_data()
+        self.populate_table(self.get_label_data())
     
     def on_mysql_settings_triggered(self):
         dialog = QtWidgets.QDialog()
@@ -274,9 +270,18 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
     
     def on_print_button_clicked(self):
         data = self.get_label_data()
-        if data:
-            self.print_data(data)
-    
+        if not data:
+            return
+        label_data = []
+        for row in data:
+            label_data.append({
+                "BARCODE": row["woNumber"],
+                "part_number": row["partNumber"],
+                "part_description": row["partDescription"],
+                "quantity": row["labelQty"]
+            })
+        self.print_data(label_data)
+        
     def print_data(self, data: List[dict]):
         with self.printer as printer:
             for label in data:
@@ -289,16 +294,44 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
                 logger.debug(f"Printing {quantity} labels: {log_data}")
 
     def get_label_data(self):
+        wo_number = self.lineEdit.text()
+        if not wo_number:
+            wo_number = "%"
+        values = {"wo_number": wo_number}
         cursor = self.mysql_connection.cursor(dictionary=True)
-        cursor.execute("SELECT num AS part_number, description AS part_description, 1 AS quantity FROM part LIMIT 1000")
+        query = """SELECT wo.num AS woNumber,
+                        part.num as partNumber,
+                        part.description AS partDescription,
+                        TRIM(woitem.qtyTarget)+0 AS qtyTarget,
+                        TRIM(bomitem.quantity)+0 AS bomQty,
+                        uom.code AS uomCode,
+                        ROUND(woitem.qtyTarget / bomitem.quantity) AS labelQty
+                    FROM wo
+                    JOIN woitem ON wo.id = woitem.woId
+                    JOIN moitem ON woitem.moItemId = moitem.id
+                    JOIN bomitem ON moitem.bomItemId = bomitem.id
+                    JOIN part ON moitem.partId = part.id
+                    JOIN uom ON woitem.uomId = uom.id
+
+                    WHERE moitem.statusId < 50 -- Fulfilled
+                    AND woitem.typeId = 20 -- Raw Good
+                    AND wo.statusId < 40 -- Fulfilled
+                    AND wo.num LIKE %(wo_number)s
+                    AND part.typeId != 21 -- Labor
+                    """
+        cursor.execute(query, values)
         result = cursor.fetchall()
         cursor.close()
-        self.populate_table(result)
+        for row in result:
+            if row["labelQty"] != 0:
+                continue
+            row["labelQty"] = 1
         return result
     
     def populate_table(self, data: List[dict]):
-        self.tableWidget.setRowCount(len(data))
+        self.tableWidget.setRowCount(0)
         for row, row_data in enumerate(data):
+            self.tableWidget.insertRow(row)
             for column, column_data in enumerate(row_data.values()):
                 self.tableWidget.setItem(row, column, QtWidgets.QTableWidgetItem(str(column_data)))
         self.resize_all_columns(self.tableWidget)
@@ -308,6 +341,8 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
             tableWidget.resizeColumnToContents(column)
 
 if __name__ == '__main__':
+    logger.info("Starting application...")
+    logger.info(f"Version: {__version__}")
     app = QtWidgets.QApplication([])
     window = FishbowlLabelGenerator()
     window.show()
