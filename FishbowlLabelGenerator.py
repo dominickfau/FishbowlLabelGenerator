@@ -95,6 +95,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         super().__init__()
         self.printer = DymoLabelPrinter()
         self.setupUi(self)
+        self.setWindowTitle(f'Fishbowl Label Generator v{__version__}')
         self.selectedPrinterComboBox.addItems(self.printer.PRINTERS)
         self.connect_signals()
         self.printPushButton.setEnabled(False)
