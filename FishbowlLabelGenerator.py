@@ -6,7 +6,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mainwindow import Ui_MainWindow
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -18,22 +18,24 @@ file_handler.setLevel(logging.DEBUG)
 
 logger.addHandler(file_handler)
 
+
 class DymoLabelPrinter:
-    def __init__(self):
+    # noinspection PyTypeChecker
+    def __init__(self) -> object:
         self.printer_name = None
         self.label_file_path = None
         self.is_open = False
         self.printer_engine = Dispatch('Dymo.DymoAddIn')
         self.label_engine = Dispatch('Dymo.DymoLabels')
-        PRINTERS = self.printer_engine.GetDymoPrinters()
-        self.PRINTERS = [printer for printer in PRINTERS.split('|') if printer]
+        printers = self.printer_engine.GetDymoPrinters()
+        self.PRINTERS = [printer for printer in printers.split('|') if printer]
         logger.info(f'Printers: {self.PRINTERS}')
-    
+
     def __enter__(self):
         self.printer_engine.StartPrintJob()
         logger.debug('Starting new print job.')
         return self.printer_engine
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         logger.debug('Closing print job.')
         self.printer_engine.EndPrintJob()
@@ -43,21 +45,26 @@ class DymoLabelPrinter:
             raise Exception('Printer not found')
         self.printer_engine.SelectPrinter(printer_name)
         logger.info(f'Printer set to: {printer_name}')
-        
+
     def print_labels(self, copies: int = 1):
         logger.info(f'Printing {copies} copies.')
         with self as label_engine:
             label_engine.Print(copies, False)
-    
+
     def set_field(self, field_name: str, field_value: Any):
         self.label_engine.SetField(field_name, field_value)
 
-    def register_label_file(self, label_file_path: str):
+    def register_label_file(self, label_file_path: str) -> object:
+        """
+
+        :rtype: object
+        """
         self.label_file_path = label_file_path
         self.is_open = self.printer_engine.Open(label_file_path)
         if not self.is_open:
             raise Exception('Could not open label file.')
         logger.info(f'Label file set to: {label_file_path}')
+
 
 class Worker(QtCore.QObject):
     finished = QtCore.pyqtSignal()
@@ -71,7 +78,7 @@ class Worker(QtCore.QObject):
         self.mysql_user = mysql_user
         self.mysql_password = mysql_password
         self.mysql_database = mysql_database
-    
+
     def run(self):
         try:
             self.result.emit(self.work())
@@ -79,19 +86,19 @@ class Worker(QtCore.QObject):
             self.error.emit(e)
         finally:
             self.finished.emit()
-    
+
     def work(self):
         return mysql.connector.connect(
-                host=self.mysql_host,
-                port=self.mysql_port,
-                user=self.mysql_user,
-                password=self.mysql_password,
-                database=self.mysql_database
-            )
+            host=self.mysql_host,
+            port=self.mysql_port,
+            user=self.mysql_user,
+            password=self.mysql_password,
+            database=self.mysql_database
+        )
 
 
 class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self) -> object:
         super().__init__()
         self.printer = DymoLabelPrinter()
         self.setupUi(self)
@@ -108,28 +115,32 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
             self.printer.register_label_file(self.settings.value('label_file_path'))
             self.selectedPrinterComboBox.setCurrentText(self.settings.value('selected_printer_name'))
             self.printPushButton.setEnabled(True)
-        except TypeError:
+        except Exception:
             pass
         self.settings.endGroup()
 
         self.settings.beginGroup('MySQL')
-        self.mysql_host = self.settings.value('host', "localhost")
-        self.mysql_port = self.settings.value('port', 3305)
+        self.mysql_host = self.settings.value('host', "polarkraft_live_v2")
+        self.mysql_port = self.settings.value('port', "3646")
         self.mysql_user = self.settings.value('user', "gone")
         self.mysql_password = self.settings.value('password', "fishing")
         self.mysql_database = self.settings.value('database', "none")
         self.settings.endGroup()
         self.centralwidget.setEnabled(False)
 
+        self.total_label.setText(f"Total Labels: 0")
+        self.selected_label_total.setText(f"Selected Labels: 0")
+
         self.connect_to_mysql()
-    
-    def on_table_row_double_clicked(self, index):
+
+    def on_table_row_double_clicked(self):
         selected_row = self.tableWidget.selectedItems()
         self.print_selected_row(selected_row)
 
     def connect_to_mysql(self):
         logger.info('Connecting to Server database.')
-        logger.debug(f"Connection variables: {self.mysql_host, self.mysql_port, self.mysql_user, self.mysql_password, self.mysql_database}")
+        logger.debug(
+            f"Connection variables: {self.mysql_host, self.mysql_port, self.mysql_user, self.mysql_password, self.mysql_database}")
         self.centralwidget.setEnabled(False)
         self.loadingDialog = QtWidgets.QProgressDialog(self)
         self.loadingDialog.setWindowTitle('Connecting')
@@ -141,7 +152,8 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.loadingDialog.show()
 
         self.thread = QtCore.QThread()
-        self.worker = Worker(self.mysql_host, self.mysql_port, self.mysql_user, self.mysql_password, self.mysql_database)
+        self.worker = Worker(self.mysql_host, self.mysql_port, self.mysql_user, self.mysql_password,
+                             self.mysql_database)
         self.worker.moveToThread(self.thread)
         self.worker.result.connect(self.on_worker_result)
         self.worker.result.connect(lambda: self.centralwidget.setEnabled(True))
@@ -152,19 +164,20 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.worker.finished.connect(self.loadingDialog.close)
         self.thread.finished.connect(self.thread.deleteLater)
         self.thread.start()
-    
+
     def show_mysql_error(self, error):
         logger.exception(error)
         self.mysql_connection = None
         msg = QtWidgets.QMessageBox()
         msg.setIcon(QtWidgets.QMessageBox.Critical)
         msg.setWindowTitle('Error')
-        msg.setText("Could not connect to MySQL database. Make sure the connection settings are correct then close and reopen the program.")
+        msg.setText(
+            "Could not connect to MySQL database. Make sure the connection settings are correct then close and reopen the program.")
         msg.setInformativeText(str(error))
         msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
         msg.exec_()
         self.on_mysql_settings_triggered()
-    
+
     def on_worker_result(self, connection):
         self.mysql_connection = connection
         logger.debug("Successfully connected to server at: {self.mysql_host}.")
@@ -187,7 +200,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.settings.endGroup()
 
         event.accept()
-    
+
     def connect_signals(self):
         self.selectedPrinterComboBox.currentIndexChanged.connect(self.on_current_printer_index_changed)
         self.browsePushButton.clicked.connect(self.on_browse_button_clicked)
@@ -195,28 +208,36 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.actionMySQL_Settings.triggered.connect(self.on_mysql_settings_triggered)
         self.searchPushButton.clicked.connect(self.on_search_button_clicked)
         self.tableWidget.doubleClicked.connect(self.on_table_row_double_clicked)
+        self.tableWidget.itemSelectionChanged.connect(self.on_table_selection_changed)
         self.printSelectedPushButton.clicked.connect(self.on_print_selected_button_clicked)
     
+    def on_table_selection_changed(self):
+        selected_row = self.tableWidget.selectedItems()
+        selected_total = selected_row[6].text()
+        
+        self.selected_label_total.setText(f"Selected Labels: {selected_total}")
+
     def on_print_selected_button_clicked(self):
         selected_row = self.tableWidget.selectedItems()
         if len(selected_row) == 0:
             return
-        
+
         self.print_selected_row(selected_row)
-    
+
     def print_selected_row(self, row):
         data = [{
             "BARCODE": row[0].text(),
             "part_number": row[1].text(),
             "part_description": row[2].text(),
-            "quantity": row[6].text()
+            "quantity": row[6].text(),
+            "MATERIAL_THICKNESS": row[7].text()
         }]
         logger.debug(f"Printing selected row: {data}")
         self.print_data(data)
 
     def on_search_button_clicked(self):
         self.populate_table(self.get_label_data())
-    
+
     def on_mysql_settings_triggered(self):
         dialog = QtWidgets.QDialog()
         dialog.setWindowTitle('MySQL Settings')
@@ -258,17 +279,17 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.mysql_user = dialog.layout().itemAt(5).widget().text()
         self.mysql_password = dialog.layout().itemAt(7).widget().text()
         self.mysql_database = dialog.layout().itemAt(9).widget().text()
-    
+
     def on_current_printer_index_changed(self, index: int):
         self.printer.set_printer(self.selectedPrinterComboBox.currentText())
-    
+
     def on_browse_button_clicked(self):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Label File', '', '*.label')
         if file_path:
             self.printer.register_label_file(file_path)
             self.labelFileLineEdit.setText(file_path)
             self.printPushButton.setEnabled(True)
-    
+
     def on_print_button_clicked(self):
         data = self.get_label_data()
         if not data:
@@ -279,10 +300,11 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
                 "BARCODE": row["woNumber"],
                 "part_number": row["partNumber"],
                 "part_description": row["partDescription"],
-                "quantity": row["labelQty"]
+                "quantity": row["labelQty"],
+                "MATERIAL_THICKNESS": row[7].text()
             })
         self.print_data(label_data)
-        
+
     def print_data(self, data: List[dict]):
         with self.printer as printer:
             for label in data:
@@ -306,7 +328,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
                         TRIM(woitem.qtyTarget)+0 AS qtyTarget,
                         TRIM(bomitem.quantity)+0 AS bomQty,
                         uom.code AS uomCode,
-                        ROUND(woitem.qtyTarget / bomitem.quantity) AS labelQty
+                        ROUND(woitem.qtyTarget) AS labelQty
                     FROM wo
                     JOIN woitem ON wo.id = woitem.woId
                     JOIN moitem ON woitem.moItemId = moitem.id
@@ -322,13 +344,27 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
                     """
         cursor.execute(query, values)
         result = cursor.fetchall()
-        cursor.close()
+        total_labels = 0
         for row in result:
+            row["MATERIAL_THICKNESS"] = self.find_material_thickness(cursor, row['partNumber'])
+            total_labels += row["labelQty"]
+            
             if row["labelQty"] != 0:
                 continue
             row["labelQty"] = 1
+
+        cursor.close()
+        self.total_label.setText(f"Total Labels: {total_labels}")
         return result
-    
+
+    def find_material_thickness(self, cursor, part_number: str):
+        cursor.execute("SELECT num FROM bom WHERE id = (SELECT defaultBomId FROM part WHERE num = %(part_number)s)", {"part_number": part_number})
+        bom_number = cursor.fetchall()
+        
+        if len(bom_number) <= 0:
+            return "N/A"
+        return bom_number[0]["num"][-4:-1]
+        
     def populate_table(self, data: List[dict]):
         self.tableWidget.setRowCount(0)
         for row, row_data in enumerate(data):
@@ -336,10 +372,11 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
             for column, column_data in enumerate(row_data.values()):
                 self.tableWidget.setItem(row, column, QtWidgets.QTableWidgetItem(str(column_data)))
         self.resize_all_columns(self.tableWidget)
-    
+
     def resize_all_columns(self, tableWidget: QtWidgets.QTableWidget):
         for column in range(tableWidget.columnCount()):
             tableWidget.resizeColumnToContents(column)
+
 
 if __name__ == '__main__':
     logger.info("Starting application...")

@@ -14,7 +14,7 @@
    <string>Fishbowl Label Printer</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,1,0">
+   <layout class="QVBoxLayout" name="verticalLayout">
     <item>
      <layout class="QFormLayout" name="formLayout">
       <item row="0" column="0">
@@ -130,7 +130,43 @@
         <string>Label Quantity</string>
        </property>
       </column>
+      <column>
+       <property name="text">
+        <string>Material Thickness</string>
+       </property>
+      </column>
      </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout_3">
+      <item>
+       <widget class="QLabel" name="total_label">
+        <property name="text">
+         <string>Total Labels: VALUE</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="horizontalSpacer_2">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="selected_label_total">
+        <property name="text">
+         <string>Selected Total: VALUE</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </item>
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout_2">

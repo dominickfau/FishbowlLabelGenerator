@@ -68,7 +68,7 @@
 			<Name>BARCODE</Name>
 			<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
 			<BackColor Alpha="0" Red="255" Green="255" Blue="255" />
-			<LinkedObjectName />
+			<LinkedObjectName>part_number</LinkedObjectName>
 			<Rotation>Rotation0</Rotation>
 			<IsMirrored>False</IsMirrored>
 			<IsVariable>False</IsVariable>
@@ -77,7 +77,7 @@
 			<Text>PartNumber</Text>
 			<Type>Code128Auto</Type>
 			<Size>Medium</Size>
-			<TextPosition>Bottom</TextPosition>
+			<TextPosition>None</TextPosition>
 			<TextFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" />
 			<CheckSumFont Family="Arial" Size="8" Bold="False" Italic="False" Underline="False" Strikeout="False" />
 			<TextEmbedding>None</TextEmbedding>
@@ -85,7 +85,7 @@
 			<HorizontalAlignment>Center</HorizontalAlignment>
 			<QuietZonesPadding Left="0" Top="0" Right="0" Bottom="0" />
 		</BarcodeObject>
-		<Bounds X="331" Y="848" Width="4380" Height="645" />
+		<Bounds X="601" Y="968" Width="4110" Height="525" />
 	</ObjectInfo>
 	<ObjectInfo>
 		<DateTimeObject>
@@ -111,5 +111,34 @@
 			<Use24HourFormat>False</Use24HourFormat>
 		</DateTimeObject>
 		<Bounds X="4713" Y="135" Width="209.999999999999" Height="1320" />
+	</ObjectInfo>
+	<ObjectInfo>
+		<TextObject>
+			<Name>MATERIAL_THICKNESS</Name>
+			<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+			<BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+			<LinkedObjectName />
+			<Rotation>Rotation90</Rotation>
+			<IsMirrored>False</IsMirrored>
+			<IsVariable>False</IsVariable>
+			<GroupID>-1</GroupID>
+			<IsOutlined>False</IsOutlined>
+			<HorizontalAlignment>Left</HorizontalAlignment>
+			<VerticalAlignment>Top</VerticalAlignment>
+			<TextFitMode>ShrinkToFit</TextFitMode>
+			<UseFullFontHeight>True</UseFullFontHeight>
+			<Verticalized>False</Verticalized>
+			<StyledText>
+				<Element>
+					<String xml:space="preserve">Material Thickness
+</String>
+					<Attributes>
+						<Font Family="Arial" Size="12" Bold="False" Italic="False" Underline="False" Strikeout="False" />
+						<ForeColor Alpha="255" Red="0" Green="0" Blue="0" HueScale="100" />
+					</Attributes>
+				</Element>
+			</StyledText>
+		</TextObject>
+		<Bounds X="331" Y="135" Width="299.999999999999" Height="1260" />
 	</ObjectInfo>
 </DieCutLabel>
