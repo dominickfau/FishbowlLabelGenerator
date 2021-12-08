@@ -1,26 +1,78 @@
+import platform
 import mysql.connector
-import logging
+import logging, os, json
+from logging.config import dictConfig
 from typing import Any, List
 from win32com.client import Dispatch
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mainwindow import Ui_MainWindow
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+MAX_LOG_SIZE_MB = 10
+MAX_LOG_COUNT = 2
 
-formatter = logging.Formatter('%(asctime)s : %(name)s : %(message)s')
-file_handler = logging.FileHandler('program_log.log')
-file_handler.setFormatter(formatter)
-file_handler.setLevel(logging.DEBUG)
+if not os.path.exists("Logs"):
+    os.mkdir("Logs")
 
-logger.addHandler(file_handler)
+
+dictConfig({
+    "version": 1,
+    "formatters": {
+        "default": {
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+            "format": "%(asctime)s [%(levelname)s] in %(module)s: %(message)s",
+        },
+        "console": {
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+            "format": "[%(name)s] %(asctime)s [%(levelname)s] in %(module)s: %(message)s",
+        }
+    },
+    "handlers": {
+        "backend_log_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "Logs/backend.log",
+            "maxBytes": MAX_LOG_SIZE_MB * 1024 * 1024,
+            "backupCount": MAX_LOG_COUNT,
+            "formatter": "default"
+        },
+        "frontend_log_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "Logs/frontend.log",
+            "maxBytes": MAX_LOG_SIZE_MB * 1024 * 1024,
+            "backupCount": MAX_LOG_COUNT,
+            "formatter": "default"
+        },
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "console"
+        }
+    },
+    "loggers": {
+        "root": {
+            "level": logging.DEBUG,
+            "handlers": ["backend_log_file", "frontend_log_file", "console"]
+        },
+        "backend": {
+            "level": logging.DEBUG,
+            "handlers": ["backend_log_file", "console"]
+        },
+        "frontend": {
+            "level": logging.DEBUG,
+            "handlers": ["frontend_log_file", "console"]
+        }
+    }
+})
+
+# Create the loggers
+root_logger = logging.getLogger("root")
+backend_logger = logging.getLogger("backend")
+frontend_logger = logging.getLogger("frontend")
+root_logger.info('=' * 50)
 
 
 class DymoLabelPrinter:
-    # noinspection PyTypeChecker
     def __init__(self) -> object:
         self.printer_name = None
         self.label_file_path = None
@@ -29,25 +81,26 @@ class DymoLabelPrinter:
         self.label_engine = Dispatch('Dymo.DymoLabels')
         printers = self.printer_engine.GetDymoPrinters()
         self.PRINTERS = [printer for printer in printers.split('|') if printer]
-        logger.info(f'Printers: {self.PRINTERS}')
+        backend_logger.info(f'Printers: {self.PRINTERS}')
 
     def __enter__(self):
         self.printer_engine.StartPrintJob()
-        logger.debug('Starting new print job.')
+        backend_logger.debug(f"Starting new print job. Selected printer: {self.printer_name}")
         return self.printer_engine
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        logger.debug('Closing print job.')
+        backend_logger.debug("Ending print job.")
         self.printer_engine.EndPrintJob()
 
     def set_printer(self, printer_name: str):
         if printer_name not in self.PRINTERS:
+            backend_logger.warning(f'Printer {printer_name} not found.')
             raise Exception('Printer not found')
         self.printer_engine.SelectPrinter(printer_name)
-        logger.info(f'Printer set to: {printer_name}')
+        backend_logger.info(f"Printer set to: {printer_name}")
 
     def print_labels(self, copies: int = 1):
-        logger.info(f'Printing {copies} copies.')
+        backend_logger.info(f"Printing {copies} copies.")
         with self as label_engine:
             label_engine.Print(copies, False)
 
@@ -55,15 +108,12 @@ class DymoLabelPrinter:
         self.label_engine.SetField(field_name, field_value)
 
     def register_label_file(self, label_file_path: str) -> object:
-        """
-
-        :rtype: object
-        """
         self.label_file_path = label_file_path
         self.is_open = self.printer_engine.Open(label_file_path)
         if not self.is_open:
+            backend_logger.error(f"Could not open label file: {label_file_path}")
             raise Exception('Could not open label file.')
-        logger.info(f'Label file set to: {label_file_path}')
+        backend_logger.info(f"Label file set to: {label_file_path}")
 
 
 class Worker(QtCore.QObject):
@@ -120,8 +170,8 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.settings.endGroup()
 
         self.settings.beginGroup('MySQL')
-        self.mysql_host = self.settings.value('host', "polarkraft_live_v2")
-        self.mysql_port = self.settings.value('port', "3646")
+        self.mysql_host = self.settings.value('host', "localhost")
+        self.mysql_port = self.settings.value('port', "3306")
         self.mysql_user = self.settings.value('user', "gone")
         self.mysql_password = self.settings.value('password', "fishing")
         self.mysql_database = self.settings.value('database', "none")
@@ -138,9 +188,16 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.print_selected_row(selected_row)
 
     def connect_to_mysql(self):
-        logger.info('Connecting to Server database.')
-        logger.debug(
-            f"Connection variables: {self.mysql_host, self.mysql_port, self.mysql_user, self.mysql_password, self.mysql_database}")
+        backend_logger.info("Connecting to Server database.")
+        values = {
+            "Host": self.mysql_host,
+            "Port": self.mysql_port,
+            "User": self.mysql_user,
+            "Password": self.mysql_password,
+            "Database": self.mysql_database
+            }
+            
+        backend_logger.debug(f"Connection properties: {values}")
         self.centralwidget.setEnabled(False)
         self.loadingDialog = QtWidgets.QProgressDialog(self)
         self.loadingDialog.setWindowTitle('Connecting')
@@ -166,7 +223,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.thread.start()
 
     def show_mysql_error(self, error):
-        logger.exception(error)
+        backend_logger.exception(f"Error connecting to database: {error}")
         self.mysql_connection = None
         msg = QtWidgets.QMessageBox()
         msg.setIcon(QtWidgets.QMessageBox.Critical)
@@ -180,17 +237,20 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
 
     def on_worker_result(self, connection):
         self.mysql_connection = connection
-        logger.debug("Successfully connected to server at: {self.mysql_host}.")
+        backend_logger.info(f"Successfully connected to server at: {self.mysql_host}.")
         self.loadingDialog.close()
 
     def closeEvent(self, event: QtGui.QCloseEvent):
-        logger.info('Closing application.')
+        root_logger.info("Closing application.")
+
+        backend_logger.debug("Saving window settings.")
         self.settings.beginGroup('MainWindow')
         self.settings.setValue('geometry', self.saveGeometry())
         self.settings.setValue('label_file_path', self.labelFileLineEdit.text())
         self.settings.setValue('selected_printer_name', self.selectedPrinterComboBox.currentText())
         self.settings.endGroup()
 
+        backend_logger.debug("Saving MySQL settings.")
         self.settings.beginGroup('MySQL')
         self.settings.setValue('host', self.mysql_host)
         self.settings.setValue('port', self.mysql_port)
@@ -202,6 +262,8 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         event.accept()
 
     def connect_signals(self):
+        backend_logger.info("Connecting signals.")
+
         self.selectedPrinterComboBox.currentIndexChanged.connect(self.on_current_printer_index_changed)
         self.browsePushButton.clicked.connect(self.on_browse_button_clicked)
         self.printPushButton.clicked.connect(self.on_print_button_clicked)
@@ -214,7 +276,13 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
     def on_table_selection_changed(self):
         selected_row = self.tableWidget.selectedItems()
         selected_total = selected_row[6].text()
+
+        values = {}
+        for item in self.tableWidget.selectedItems():
+            column_name = self.tableWidget.horizontalHeaderItem(item.column()).text()
+            values[column_name] = item.text()
         
+        frontend_logger.debug(f"Selection changed. Values:\n[{json.dumps(values, indent=4)}]")
         self.selected_label_total.setText(f"Selected Labels: {selected_total}")
 
     def on_print_selected_button_clicked(self):
@@ -232,7 +300,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
             "quantity": row[6].text(),
             "MATERIAL_THICKNESS": row[7].text()
         }]
-        logger.debug(f"Printing selected row: {data}")
+        frontend_logger.info(f"Printing selected row: {data}")
         self.print_data(data)
 
     def on_search_button_clicked(self):
@@ -271,6 +339,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
             self.mysql_user = dialog.layout().itemAt(5).widget().text()
             self.mysql_password = dialog.layout().itemAt(7).widget().text()
             self.mysql_database = dialog.layout().itemAt(9).widget().text()
+            backend_logger.info(f"User requested to reconnect to MySQL server: {self.mysql_host}:{self.mysql_port}")
             self.connect_to_mysql()
         self.centralwidget.setEnabled(True)
 
@@ -295,6 +364,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         if not data:
             return
         label_data = []
+        frontend_logger.info(f"Printing all labels in table {len(data)}.")
         for row in data:
             label_data.append({
                 "BARCODE": row["woNumber"],
@@ -312,9 +382,9 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
                 log_data = []
                 for field_name, field_value in label.items():
                     self.printer.set_field(field_name, field_value)
-                    log_data.append(f"{field_name}: {field_value}")
+                    log_data.append({field_name: field_value})
                 printer.Print(quantity, False)
-                logger.debug(f"Printing {quantity} labels: {log_data}")
+                frontend_logger.debug(f"Printing {quantity} labels:\n{json.dumps(log_data, indent=4)}")
 
     def get_label_data(self):
         wo_number = self.lineEdit.text()
@@ -366,6 +436,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         return bom_number[0]["num"][-4:-1]
         
     def populate_table(self, data: List[dict]):
+        frontend_logger.debug(f"Populating table with {len(data)} rows.")
         self.tableWidget.setRowCount(0)
         for row, row_data in enumerate(data):
             self.tableWidget.insertRow(row)
@@ -374,14 +445,26 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.resize_all_columns(self.tableWidget)
 
     def resize_all_columns(self, tableWidget: QtWidgets.QTableWidget):
+        frontend_logger.debug("Resizing all columns in table.")
         for column in range(tableWidget.columnCount()):
             tableWidget.resizeColumnToContents(column)
 
-
-if __name__ == '__main__':
-    logger.info("Starting application...")
-    logger.info(f"Version: {__version__}")
+def main():
     app = QtWidgets.QApplication([])
     window = FishbowlLabelGenerator()
     window.show()
     app.exec_()
+
+if __name__ == '__main__':
+    root_logger.info(f"Starting application... Version: {__version__}")
+
+    # Log the os platform, version and architecture
+    bits, linkage = platform.architecture()
+    root_logger.info(f'{platform.system()} OS detected. Version: "{platform.version()}" Architecture: [Bits: "{bits}", Linkage: "{linkage}"]')
+
+    try:
+        main()
+    except Exception as error:
+        root_logger.error("Application failed to start.")
+        root_logger.exception(f"Exception: {error}")
+        raise error
