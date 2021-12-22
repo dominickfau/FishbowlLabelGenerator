@@ -65,7 +65,7 @@
 	</ObjectInfo>
 	<ObjectInfo>
 		<BarcodeObject>
-			<Name>BARCODE</Name>
+			<Name>barcode</Name>
 			<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
 			<BackColor Alpha="0" Red="255" Green="255" Blue="255" />
 			<LinkedObjectName>part_number</LinkedObjectName>
@@ -89,7 +89,7 @@
 	</ObjectInfo>
 	<ObjectInfo>
 		<DateTimeObject>
-			<Name>DATE-TIME</Name>
+			<Name>date_time</Name>
 			<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
 			<BackColor Alpha="0" Red="255" Green="255" Blue="255" />
 			<LinkedObjectName />
@@ -114,7 +114,7 @@
 	</ObjectInfo>
 	<ObjectInfo>
 		<TextObject>
-			<Name>MATERIAL_THICKNESS</Name>
+			<Name>material_thickness</Name>
 			<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
 			<BackColor Alpha="0" Red="255" Green="255" Blue="255" />
 			<LinkedObjectName />

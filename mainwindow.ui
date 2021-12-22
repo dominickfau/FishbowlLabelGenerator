@@ -84,7 +84,7 @@
        <set>QAbstractItemView::NoEditTriggers</set>
       </property>
       <property name="selectionMode">
-       <enum>QAbstractItemView::SingleSelection</enum>
+       <enum>QAbstractItemView::MultiSelection</enum>
       </property>
       <property name="selectionBehavior">
        <enum>QAbstractItemView::SelectRows</enum>
@@ -140,13 +140,6 @@
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout_3">
       <item>
-       <widget class="QLabel" name="total_label">
-        <property name="text">
-         <string>Total Labels: VALUE</string>
-        </property>
-       </widget>
-      </item>
-      <item>
        <spacer name="horizontalSpacer_2">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
@@ -160,6 +153,13 @@
        </spacer>
       </item>
       <item>
+       <widget class="QLabel" name="total_label">
+        <property name="text">
+         <string>Total Labels: VALUE</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QLabel" name="selected_label_total">
         <property name="text">
          <string>Selected Total: VALUE</string>
@@ -170,13 +170,6 @@
     </item>
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout_2">
-      <item>
-       <widget class="QPushButton" name="printPushButton">
-        <property name="text">
-         <string>Print All</string>
-        </property>
-       </widget>
-      </item>
       <item>
        <spacer name="horizontalSpacer">
         <property name="orientation">

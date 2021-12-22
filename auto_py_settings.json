@@ -34,6 +34,14 @@
    "value": false
   },
   {
+   "optionDest": "disable_windowed_traceback",
+   "value": false
+  },
+  {
+   "optionDest": "embed_manifest",
+   "value": true
+  },
+  {
    "optionDest": "uac_admin",
    "value": false
   },
@@ -54,16 +62,20 @@
    "value": false
   },
   {
-   "optionDest": "disable_windowed_traceback",
-   "value": false
-  },
-  {
    "optionDest": "datas",
    "value": "C:/Users/Nick Gamming/Documents/Python/FishbowlLabelGenerator/Labels;Labels/"
   },
   {
-   "optionDest": "datas",
-   "value": "C:/Users/Nick Gamming/Documents/Python/FishbowlLabelGenerator/Dymo Software;Dymo Software/"
+   "optionDest": "hiddenimports",
+   "value": "win32api"
+  },
+  {
+   "optionDest": "hiddenimports",
+   "value": "pythoncom"
+  },
+  {
+   "optionDest": "binaries",
+   "value": "C:/Users/Nick Gamming/AppData/Local/Programs/Python/Python38-32/Lib/site-packages/pywin32_system32/pythoncom38.dll;."
   }
  ],
  "nonPyinstallerOptions": {

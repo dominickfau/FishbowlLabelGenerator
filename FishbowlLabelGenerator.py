@@ -1,20 +1,59 @@
+from __future__ import annotations
 import platform
 import mysql.connector
-import logging, os, json
+import logging, os, json, ctypes, sys
+import subprocess
 from logging.config import dictConfig
 from typing import Any, List
 from win32com.client import Dispatch
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from mainwindow import Ui_MainWindow
+from utilities import DefaultSetting, LabelData
 
-__version__ = "1.0.0"
+__version__ = "1.0.5"
 
-MAX_LOG_SIZE_MB = 10
-MAX_LOG_COUNT = 2
+COMPANY_NAME = 'DF-Software'
+PROGRAM_NAME = "Fishbowl Label Generator"
+USER_HOME_FOLDER = os.path.expanduser('~')
+COMPANY_FOLDER = os.path.join(USER_HOME_FOLDER, "Documents", COMPANY_NAME)
+PROGRAM_FOLDER = os.path.join(COMPANY_FOLDER, PROGRAM_NAME)
 
-if not os.path.exists("Logs"):
-    os.mkdir("Logs")
+settings = QtCore.QSettings(COMPANY_NAME, PROGRAM_NAME)
+
+# Default log settings
+LOG_FOLDER = os.path.join(PROGRAM_FOLDER, 'Logs')
+MAX_LOG_SIZE_MB = DefaultSetting(settings=settings, group_name="Logging", name="max_log_size_mb", value=5).initialize_setting().value
+MAX_LOG_COUNT = DefaultSetting(settings=settings, group_name="Logging", name="max_log_count", value=3).initialize_setting().value
+ROOT_LOG_LEVEL = DefaultSetting(settings=settings, group_name="Logging", name="root_log_level", value=logging.INFO).initialize_setting().value
+FRONT_END_LOG_LEVEL = DefaultSetting(settings=settings, group_name="Logging", name="front_end_log_level", value=logging.INFO).initialize_setting().value
+BACK_END_LOG_LEVEL = DefaultSetting(settings=settings, group_name="Logging", name="back_end_log_level", value=logging.INFO).initialize_setting().value
+FRONT_END_LOG_FILE = "frontend.log"
+BACK_END_LOG_FILE = "backend.log"
+
+# Default program settings
+REMOVE_PRINTED_LABELS = DefaultSetting(settings=settings, group_name="Program", name="remove_printed_labels", value=True).initialize_setting().value
+DEBUG = DefaultSetting(settings=settings, group_name="Program", name="debug", value=False).initialize_setting().value
+if DEBUG == "true":
+    DEBUG = True
+else:
+    DEBUG = False
+
+DISSABLE_LABEL_PRINTING = DefaultSetting(settings=settings, group_name="Program", name="disable_label_printing", value=False).initialize_setting().value
+if DISSABLE_LABEL_PRINTING == "true":
+    DISSABLE_LABEL_PRINTING = True
+else:
+    DISSABLE_LABEL_PRINTING = False
+
+
+if not os.path.exists(COMPANY_FOLDER):
+    os.makedirs(COMPANY_FOLDER)
+
+if not os.path.exists(PROGRAM_FOLDER):
+    os.makedirs(PROGRAM_FOLDER)
+
+if not os.path.exists(LOG_FOLDER):
+    os.makedirs(LOG_FOLDER)
 
 
 dictConfig({
@@ -32,14 +71,14 @@ dictConfig({
     "handlers": {
         "backend_log_file": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": "Logs/backend.log",
+            "filename": os.path.join(LOG_FOLDER, BACK_END_LOG_FILE),
             "maxBytes": MAX_LOG_SIZE_MB * 1024 * 1024,
             "backupCount": MAX_LOG_COUNT,
             "formatter": "default"
         },
         "frontend_log_file": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": "Logs/frontend.log",
+            "filename": os.path.join(LOG_FOLDER, FRONT_END_LOG_FILE),
             "maxBytes": MAX_LOG_SIZE_MB * 1024 * 1024,
             "backupCount": MAX_LOG_COUNT,
             "formatter": "default"
@@ -51,15 +90,15 @@ dictConfig({
     },
     "loggers": {
         "root": {
-            "level": logging.DEBUG,
+            "level": ROOT_LOG_LEVEL,
             "handlers": ["backend_log_file", "frontend_log_file", "console"]
         },
         "backend": {
-            "level": logging.DEBUG,
+            "level": BACK_END_LOG_LEVEL,
             "handlers": ["backend_log_file", "console"]
         },
         "frontend": {
-            "level": logging.DEBUG,
+            "level": FRONT_END_LOG_LEVEL,
             "handlers": ["frontend_log_file", "console"]
         }
     }
@@ -69,7 +108,12 @@ dictConfig({
 root_logger = logging.getLogger("root")
 backend_logger = logging.getLogger("backend")
 frontend_logger = logging.getLogger("frontend")
-root_logger.info('=' * 50)
+root_logger.info('=' * 80)
+
+
+class MissingRequiredSoftwareError(Exception):
+    """Raised when a missing software package is missing or not found."""
+    pass
 
 
 class DymoLabelPrinter:
@@ -77,8 +121,13 @@ class DymoLabelPrinter:
         self.printer_name = None
         self.label_file_path = None
         self.is_open = False
-        self.printer_engine = Dispatch('Dymo.DymoAddIn')
-        self.label_engine = Dispatch('Dymo.DymoLabels')
+        try:
+            self.printer_engine = Dispatch('Dymo.DymoAddIn')
+            self.label_engine = Dispatch('Dymo.DymoLabels')
+        except Exception as error:
+            if error.strerror == "Invalid class string":
+                raise MissingRequiredSoftwareError("Missing required software program. Please install DLS8Setup.8.7.exe.")
+
         printers = self.printer_engine.GetDymoPrinters()
         self.PRINTERS = [printer for printer in printers.split('|') if printer]
         backend_logger.info(f'Printers: {self.PRINTERS}')
@@ -90,6 +139,9 @@ class DymoLabelPrinter:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         backend_logger.debug("Ending print job.")
+        # Log the exception if one was raised
+        if exc_type is not None:
+            backend_logger.exception(f"Exception occurred during print job. Exception: {exc_tb}")
         self.printer_engine.EndPrintJob()
 
     def set_printer(self, printer_name: str):
@@ -146,36 +198,67 @@ class Worker(QtCore.QObject):
             database=self.mysql_database
         )
 
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
 
 class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
     def __init__(self) -> object:
         super().__init__()
-        self.printer = DymoLabelPrinter()
+        try:
+            self.printer = DymoLabelPrinter()
+        except MissingRequiredSoftwareError as error:
+            root_logger.error(f"There is a missing software program required to run: {error}")
+
+            msg = QtWidgets.QMessageBox()
+            msg.setIcon(QtWidgets.QMessageBox.Critical)
+            msg.setWindowTitle('Missing Required Software')
+            msg.setText(str(error))
+            msg.setInformativeText("After clicking OK, the correct software will attempt to install.")
+            msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+            msg.exec_()
+            try:
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", os.path.realpath(os.path.join(os.path.dirname(__file__), 'Dymo Software', 'DLS8Setup.8.7.exe')))
+            except Exception as error:
+                root_logger.error("Could not find DLS8Setup.8.7.exe")
+                root_logger.exception(error)
+                msg = QtWidgets.QMessageBox()
+                msg.setIcon(QtWidgets.QMessageBox.Critical)
+                msg.setWindowTitle('Missing Required Software')
+                msg.setText("There was an issue running the software. Please try again.")
+                msg.setDetailedText(str(error))
+                msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+                msg.exec_()
+            sys.exit(1)
+            
         self.setupUi(self)
         self.setWindowTitle(f'Fishbowl Label Generator v{__version__}')
+        if DEBUG:
+            self.setWindowTitle(f'Fishbowl Label Generator v{__version__} - DEBUG MODE')
         self.selectedPrinterComboBox.addItems(self.printer.PRINTERS)
         self.connect_signals()
-        self.printPushButton.setEnabled(False)
-        self.settings = QtCore.QSettings('Fishbowl Label Generator', 'Fishbowl Label Generator')
+        self.searchPushButton.setEnabled(False)
 
-        self.settings.beginGroup('MainWindow')
+        settings.beginGroup('MainWindow')
         try:
-            self.restoreGeometry(self.settings.value('geometry'))
-            self.labelFileLineEdit.setText(self.settings.value('label_file_path'))
-            self.printer.register_label_file(self.settings.value('label_file_path'))
-            self.selectedPrinterComboBox.setCurrentText(self.settings.value('selected_printer_name'))
-            self.printPushButton.setEnabled(True)
+            self.restoreGeometry(settings.value('geometry'))
+            self.labelFileLineEdit.setText(settings.value('label_file_path'))
+            self.printer.register_label_file(settings.value('label_file_path'))
+            self.selectedPrinterComboBox.setCurrentText(settings.value('selected_printer_name'))
         except Exception:
             pass
-        self.settings.endGroup()
+        settings.endGroup()
 
-        self.settings.beginGroup('MySQL')
-        self.mysql_host = self.settings.value('host', "localhost")
-        self.mysql_port = self.settings.value('port', "3306")
-        self.mysql_user = self.settings.value('user', "gone")
-        self.mysql_password = self.settings.value('password', "fishing")
-        self.mysql_database = self.settings.value('database', "none")
-        self.settings.endGroup()
+        settings.beginGroup('MySQL')
+        self.mysql_host = settings.value('host', "localhost")
+        self.mysql_port = settings.value('port', "3306")
+        self.mysql_user = settings.value('user', "gone")
+        self.mysql_password = settings.value('password', "fishing")
+        self.mysql_database = settings.value('database', "none")
+        settings.endGroup()
         self.centralwidget.setEnabled(False)
 
         self.total_label.setText(f"Total Labels: 0")
@@ -184,8 +267,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.connect_to_mysql()
 
     def on_table_row_double_clicked(self):
-        selected_row = self.tableWidget.selectedItems()
-        self.print_selected_row(selected_row)
+        self.print_selected()
 
     def connect_to_mysql(self):
         backend_logger.info("Connecting to Server database.")
@@ -214,22 +296,25 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.worker.moveToThread(self.thread)
         self.worker.result.connect(self.on_worker_result)
         self.worker.result.connect(lambda: self.centralwidget.setEnabled(True))
+        self.worker.result.connect(lambda: self.searchPushButton.setEnabled(True))
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.thread.quit)
         self.worker.error.connect(self.show_mysql_error)
+        self.worker.error.connect(lambda: self.searchPushButton.setEnabled(False))
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.finished.connect(self.loadingDialog.close)
         self.thread.finished.connect(self.thread.deleteLater)
+        backend_logger.debug("Starting thread.")
         self.thread.start()
 
     def show_mysql_error(self, error):
-        backend_logger.exception(f"Error connecting to database: {error}")
+        backend_logger.error(f"Error connecting to database: {error}")
         self.mysql_connection = None
         msg = QtWidgets.QMessageBox()
         msg.setIcon(QtWidgets.QMessageBox.Critical)
         msg.setWindowTitle('Error')
         msg.setText(
-            "Could not connect to MySQL database. Make sure the connection settings are correct then close and reopen the program.")
+            "Could not connect to MySQL database. Make sure the connection settings are correct.")
         msg.setInformativeText(str(error))
         msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
         msg.exec_()
@@ -244,66 +329,81 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         root_logger.info("Closing application.")
 
         backend_logger.debug("Saving window settings.")
-        self.settings.beginGroup('MainWindow')
-        self.settings.setValue('geometry', self.saveGeometry())
-        self.settings.setValue('label_file_path', self.labelFileLineEdit.text())
-        self.settings.setValue('selected_printer_name', self.selectedPrinterComboBox.currentText())
-        self.settings.endGroup()
+        settings.beginGroup('MainWindow')
+        settings.setValue('geometry', self.saveGeometry())
+        settings.setValue('label_file_path', self.labelFileLineEdit.text())
+        settings.setValue('selected_printer_name', self.selectedPrinterComboBox.currentText())
+        settings.endGroup()
 
         backend_logger.debug("Saving MySQL settings.")
-        self.settings.beginGroup('MySQL')
-        self.settings.setValue('host', self.mysql_host)
-        self.settings.setValue('port', self.mysql_port)
-        self.settings.setValue('user', self.mysql_user)
-        self.settings.setValue('password', self.mysql_password)
-        self.settings.setValue('database', self.mysql_database)
-        self.settings.endGroup()
+        settings.beginGroup('MySQL')
+        settings.setValue('host', self.mysql_host)
+        settings.setValue('port', self.mysql_port)
+        settings.setValue('user', self.mysql_user)
+        settings.setValue('password', self.mysql_password)
+        settings.setValue('database', self.mysql_database)
+        settings.endGroup()
 
         event.accept()
 
     def connect_signals(self):
-        backend_logger.info("Connecting signals.")
+        backend_logger.debug("Connecting signals.")
 
         self.selectedPrinterComboBox.currentIndexChanged.connect(self.on_current_printer_index_changed)
         self.browsePushButton.clicked.connect(self.on_browse_button_clicked)
-        self.printPushButton.clicked.connect(self.on_print_button_clicked)
         self.actionMySQL_Settings.triggered.connect(self.on_mysql_settings_triggered)
         self.searchPushButton.clicked.connect(self.on_search_button_clicked)
         self.tableWidget.doubleClicked.connect(self.on_table_row_double_clicked)
         self.tableWidget.itemSelectionChanged.connect(self.on_table_selection_changed)
         self.printSelectedPushButton.clicked.connect(self.on_print_selected_button_clicked)
     
-    def on_table_selection_changed(self):
-        selected_row = self.tableWidget.selectedItems()
-        selected_total = selected_row[6].text()
-
+    def on_table_selection_changed(self):    
         values = {}
-        for item in self.tableWidget.selectedItems():
+        selected_total = 0
+        for index, item in enumerate(self.tableWidget.selectedItems()):
             column_name = self.tableWidget.horizontalHeaderItem(item.column()).text()
-            values[column_name] = item.text()
-        
-        frontend_logger.debug(f"Selection changed. Values:\n[{json.dumps(values, indent=4)}]")
+            values[index] = {column_name: item.text()}
+            if column_name == "Label Quantity":
+                selected_total += int(item.text())
+    
         self.selected_label_total.setText(f"Selected Labels: {selected_total}")
 
-    def on_print_selected_button_clicked(self):
-        selected_row = self.tableWidget.selectedItems()
-        if len(selected_row) == 0:
-            return
+    def on_print_selected_button_clicked(self) -> None:
+        backend_logger.debug("Selected print button clicked.")
+        self.print_selected()
 
-        self.print_selected_row(selected_row)
+    def print_selected(self) -> None:
+        row_items = self.tableWidget.selectedItems()
+        column_count = self.tableWidget.columnCount()
+        row_count = len(row_items) // column_count
+        label_data = []
+        total_labels = int(self.total_label.text().split(':')[1].strip())
+        # row_items is a flat list of all the selected items.
+        # We need to group them by row.
+        for row in range(row_count):
+            row_data = {}
+            for column in range(column_count):
+                column_heder = self.tableWidget.horizontalHeaderItem(column).text()
+                row_data[column_heder] = row_items[row * column_count + column].text()
+            label = LabelData(barcode=row_data["WO Number"],
+                                part_number=row_data["Part Number"],
+                                part_description=row_data["Description"],
+                                quantity=int(row_data["Label Quantity"]),
+                                material_thickness=row_data["Material Thickness"])
+            total_labels -= label.quantity
+            label_data.append(label)
+        self.print_data(label_data)
 
-    def print_selected_row(self, row):
-        data = [{
-            "BARCODE": row[0].text(),
-            "part_number": row[1].text(),
-            "part_description": row[2].text(),
-            "quantity": row[6].text(),
-            "MATERIAL_THICKNESS": row[7].text()
-        }]
-        frontend_logger.info(f"Printing selected row: {data}")
-        self.print_data(data)
+        if REMOVE_PRINTED_LABELS == "true":
+            self.total_label.setText(f"Total Labels: {total_labels}")
+            selected_rows = [row for row in range(row_count)]
+            frontend_logger.info(f"Removing {len(selected_rows)} label(s) from table.")
+            for row in sorted(selected_rows):
+                backend_logger.debug(f"Removing row {row} from table.")
+                self.tableWidget.removeRow(row)
 
     def on_search_button_clicked(self):
+        backend_logger.debug("Search button clicked.")
         self.populate_table(self.get_label_data())
 
     def on_mysql_settings_triggered(self):
@@ -350,6 +450,7 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         self.mysql_database = dialog.layout().itemAt(9).widget().text()
 
     def on_current_printer_index_changed(self, index: int):
+        backend_logger.debug(f"Current printer index changed to {index}.")
         self.printer.set_printer(self.selectedPrinterComboBox.currentText())
 
     def on_browse_button_clicked(self):
@@ -357,34 +458,21 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         if file_path:
             self.printer.register_label_file(file_path)
             self.labelFileLineEdit.setText(file_path)
-            self.printPushButton.setEnabled(True)
 
-    def on_print_button_clicked(self):
-        data = self.get_label_data()
-        if not data:
-            return
-        label_data = []
-        frontend_logger.info(f"Printing all labels in table {len(data)}.")
-        for row in data:
-            label_data.append({
-                "BARCODE": row["woNumber"],
-                "part_number": row["partNumber"],
-                "part_description": row["partDescription"],
-                "quantity": row["labelQty"],
-                "MATERIAL_THICKNESS": row[7].text()
-            })
-        self.print_data(label_data)
-
-    def print_data(self, data: List[dict]):
+    def print_data(self, labels: list[LabelData]) -> None:
+        backend_logger.info(f"Printing {len(labels)} label(s).")
         with self.printer as printer:
-            for label in data:
-                quantity = label.pop('quantity')
-                log_data = []
-                for field_name, field_value in label.items():
-                    self.printer.set_field(field_name, field_value)
-                    log_data.append({field_name: field_value})
-                printer.Print(quantity, False)
-                frontend_logger.debug(f"Printing {quantity} labels:\n{json.dumps(log_data, indent=4)}")
+            for label in labels:
+                if DISSABLE_LABEL_PRINTING:
+                    frontend_logger.info(f"Printing label: {label}")
+                    continue
+                self.printer.set_field("barcode", label.barcode)
+                self.printer.set_field("part_number", label.part_number)
+                self.printer.set_field("part_description", label.part_description)
+                self.printer.set_field("quantity", label.quantity)
+                self.printer.set_field("material_thickness", label.material_thickness)
+                printer.Print(label.quantity, False)
+                backend_logger.debug(f"Printed label: {label}")
 
     def get_label_data(self):
         wo_number = self.lineEdit.text()
@@ -412,6 +500,10 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
                     AND wo.num LIKE %(wo_number)s
                     AND part.typeId != 21 -- Labor
                     """
+        if DEBUG:
+            root_logger.warning("Limmiting query to first 100 records.")
+            query += " LIMIT 100"
+
         cursor.execute(query, values)
         result = cursor.fetchall()
         total_labels = 0
@@ -457,6 +549,15 @@ def main():
 
 if __name__ == '__main__':
     root_logger.info(f"Starting application... Version: {__version__}")
+
+    if DEBUG:
+        root_logger.setLevel(logging.DEBUG)
+        backend_logger.setLevel(logging.DEBUG)
+        frontend_logger.setLevel(logging.DEBUG)
+        root_logger.debug("Debug mode enabled.")
+    
+    if DISSABLE_LABEL_PRINTING:
+        root_logger.warning("Label printing is disabled. Labels will not be printed. However, each label will be logged.")
 
     # Log the os platform, version and architecture
     bits, linkage = platform.architecture()
