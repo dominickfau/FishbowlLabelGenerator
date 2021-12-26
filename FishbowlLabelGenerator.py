@@ -11,7 +11,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from mainwindow import Ui_MainWindow
 from utilities import DefaultSetting, LabelData
 
-__version__ = "1.0.5"
+__version__ = "1.0.6"
 
 COMPANY_NAME = 'DF-Software'
 PROGRAM_NAME = "Fishbowl Label Generator"
@@ -32,6 +32,7 @@ FRONT_END_LOG_FILE = "frontend.log"
 BACK_END_LOG_FILE = "backend.log"
 
 # Default program settings
+MAX_LABEL_COUNT = DefaultSetting(settings=settings, group_name="Program", name="max_label_count", value=100).initialize_setting().value
 REMOVE_PRINTED_LABELS = DefaultSetting(settings=settings, group_name="Program", name="remove_printed_labels", value=True).initialize_setting().value
 DEBUG = DefaultSetting(settings=settings, group_name="Program", name="debug", value=False).initialize_setting().value
 if DEBUG == "true":
@@ -363,13 +364,24 @@ class FishbowlLabelGenerator(Ui_MainWindow, QtWidgets.QMainWindow):
         for index, item in enumerate(self.tableWidget.selectedItems()):
             column_name = self.tableWidget.horizontalHeaderItem(item.column()).text()
             values[index] = {column_name: item.text()}
-            if column_name == "Label Quantity":
+            if column_name == "Label Quantity":                
                 selected_total += int(item.text())
     
         self.selected_label_total.setText(f"Selected Labels: {selected_total}")
 
     def on_print_selected_button_clicked(self) -> None:
         backend_logger.debug("Selected print button clicked.")
+        selected_total = int(self.selected_label_total.text().split(':')[1].strip())
+        if selected_total > MAX_LABEL_COUNT:
+                message_box = QtWidgets.QMessageBox()
+                message_box.setIcon(QtWidgets.QMessageBox.Warning)
+                message_box.setWindowTitle('Warning')
+                message_box.setText(f"You have selected {selected_total} labels. The maximum number of labels is {MAX_LABEL_COUNT}.")
+                message_box.setInformativeText(f"Please select fewer labels.")
+                message_box.setDetailedText(f"You can select up to {MAX_LABEL_COUNT} labels. If you would like to print more labels, open the registry editor, navigate to 'Computer\HKEY_CURRENT_USER\SOFTWARE\{COMPANY_NAME}\{PROGRAM_NAME}\Program' and change the value of 'max_label_count' to the desired number. Make sure Base is set to 'Decimal'. Then reopen the application.")
+                message_box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+                message_box.exec_()
+                return
         self.print_selected()
 
     def print_selected(self) -> None:
