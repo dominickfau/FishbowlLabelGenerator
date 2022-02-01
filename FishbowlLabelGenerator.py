@@ -15,7 +15,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from mainwindow import Ui_MainWindow
 from utilities import DefaultSetting, LabelData
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 
 COMPANY_NAME = 'DF-Software'
 PROGRAM_NAME = "Fishbowl Label Generator"
